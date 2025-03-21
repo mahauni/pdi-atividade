@@ -2,85 +2,67 @@ import cv2
 import numpy as np
 
 cap = cv2.VideoCapture("q1A.mp4")
+collision_detected = False
 
-rect_lower_hsv = np.array([100, 150, 0])
-rect_upper_hsv = np.array([140, 255, 255])
+lower_red1 = np.array([0, 120, 70])
+upper_red1 = np.array([10, 255, 255])
+lower_red2 = np.array([170, 120, 70])
+upper_red2 = np.array([180, 255, 255])
 
-square_lower_hsv1 = np.array([0, 120, 70])
-square_upper_hsv1 = np.array([10, 255, 255])
-square_lower_hsv2 = np.array([170, 120, 70])
-square_upper_hsv2 = np.array([180, 255, 255])
+lower_blue = np.array([100, 150, 50])
+upper_blue = np.array([140, 255, 255])
 
 while True:
     ret, frame = cap.read()
-
     if not ret:
         break
-    
-    # Seu código aqui....... 
-    frame_hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-    rect_mask_hsv = cv2.inRange(frame_hsv, rect_lower_hsv, rect_upper_hsv)
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-    square_mask_hsv1 = cv2.inRange(frame_hsv, square_lower_hsv1, square_upper_hsv1)
-    square_mask_hsv2 = cv2.inRange(frame_hsv, square_lower_hsv2, square_upper_hsv2)
+    mask_red1 = cv2.inRange(hsv, lower_red1, upper_red1)
+    mask_red2 = cv2.inRange(hsv, lower_red2, upper_red2)
+    mask_red = cv2.bitwise_or(mask_red1, mask_red2)
 
-    square_mask_hsv = square_mask_hsv1 + square_mask_hsv2
+    mask_blue = cv2.inRange(hsv, lower_blue, upper_blue)
 
-    rect_frame = cv2.bitwise_and(frame, frame, mask=rect_mask_hsv)
-    square_frame = cv2.bitwise_and(frame, frame, mask=square_mask_hsv)
+    conts_red, _ = cv2.findContours(mask_red, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    max_area = 0
+    red_shape = None
+    for cnt in conts_red:
+        area = cv2.contourArea(cnt)
+        if area > max_area:
+            max_area = area
+            red_shape = cv2.boundingRect(cnt)
 
-    contornos, _ = cv2.findContours(square_mask_hsv, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE) 
+    conts_blue, _ = cv2.findContours(mask_blue, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    max_area_barrier = 0
+    blue_shape = None
+    for cnt in conts_blue:
+        area = cv2.contourArea(cnt)
+        if area > max_area_barrier:
+            max_area_barrier = area
+            blue_shape = cv2.boundingRect(cnt)
 
-    mask_rgb = cv2.cvtColor(square_mask_hsv, cv2.COLOR_GRAY2RGB) 
-    contornos_img = mask_rgb.copy()
+    if red_shape is not None:
+        sx, sy, sw, sh = red_shape
+        cv2.rectangle(frame, (sx, sy), (sx + sw, sy + sh), (0, 255, 0), 2)
 
-    cv2.drawContours(square_frame, contornos, -1, [0, 255, 0], 4)
+    if red_shape is not None and blue_shape is not None:
+        bx, by, bw, bh = blue_shape
+        collision = (sx < bx + bw and sy < by + bh and sy + sh > by)
+        if collision and not (sx + sw < bx):
+            collision_detected = True
+            cv2.putText(frame, "COLISAO DETECTADA", (50, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+        else:
+            if sx + sw < bx:
+                cv2.putText(frame, "PASSOU BARREIRA", (50, 100),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+            collision_detected = False
 
-    result_frame = square_frame + rect_frame
-
-    text = ""
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    origem = (1000, 50)
-
-    cnt = contornos[0]
-    _, _, w, h = cv2.boundingRect(cnt)
-    M = cv2.moments(cnt)
-
-    half_width = w // 2
-    half_height = h // 2
-
-    cx = int(M['m10']/M['m00'])
-    cy = int(M['m01']/M['m00'])
-
-    size = 20
-    color = (128,128,0)
-
-
-    # utilize the frame em si para verificar qual e o pixel
-    # Linha horizontal baixa
-    cv2.line(result_frame, (cx - half_width, cy + half_height), (cx + half_width, cy + half_height), color, 5)
-    # Linha horizontal alta
-    cv2.line(result_frame, (cx - half_width, cy - half_height), (cx + half_width, cy - half_height), color, 5)
-
-    # Linha vertical direita
-    cv2.line(result_frame, (cx + half_width, cy - half_height), (cx + half_width, cy + half_height), color, 5)
-    # Linha vertical esquerda
-    cv2.line(result_frame, (cx - half_width, cy - half_height), (cx - half_width, cy + half_height), color, 5)
-
-
-    cv2.putText(result_frame, str(text), origem, font, 1, (200, 50, 0), 2, cv2.LINE_AA)
-
-    # Exibe resultado
-    cv2.imshow("Feed", result_frame)
-    # cv2.imshow("Feed", square_frame)
-    # cv2.imshow("Feed", rect_frame)
-
-    # Wait for key 'ESC' to quit
-    key = cv2.waitKey(1) & 0xFF
-    if key == 27:
+    cv2.imshow("Frame", frame)
+    if cv2.waitKey(1) & 0xFF == 27:
         break
 
-# That's how you exit
 cap.release()
 cv2.destroyAllWindows()
